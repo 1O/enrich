@@ -1,63 +1,90 @@
+sapply(c('shiny',
+         'bslib',
+         'shinyjs',
+         'shinycssloaders',
+         'shinyTree',
+         'shinyWidgets',
+         'waiter',
+         'magrittr',
+         'shinytoastr',
+         'shinyBS' #,
+         ## 'shinyStore'
+         ), function(p) {require(p, character.only = TRUE)})
 
-library('shiny')
-library('bslib')
-library('shinyjs')
-library('shinycssloaders')
-library('shinyTree')
-library('shinyWidgets')
-library('waiter')
-library('magrittr')
 
 ## ui <- semanticPage(
 ui <- fluidPage(
-
     theme = bslib::bs_theme(bootswatch = "yeti"),
-
-
     tags$head(tags$script(src="./js/ellipsis.js")),
-    includeCSS('./app.css'),
+    tags$script(HTML('
+                      function c2c(){navigator.clipboard.writeText(
+                          document.getElementById("search_settings").value
+                       );
+                      }
+    ')),
+    includeCSS('./www/app.css'),
     useShinyjs(),
     useAttendant(),
+    useToastr(),
     title = "networkR",
-    h1("networkRi"),
+    h1(HTML("DEIMS<sup>urplus</sup>")),
 
     ## theme = bs_theme(bootswatch = "simplex"),
     fluidRow(
-
         column(2,
-               div(p('select network')),
-               div(
-                   actionButton('clear_net_selection', 'clear all'),
-                   actionButton('select_all_nets', 'select all')
-               ),
-               div(
-                   shinycssloaders::withSpinner(
-                                        selectizeInput(inputId = 'select_net', label = "",
-                                                       choices = NULL,
-                                                       multiple = TRUE,
-                                                       options = list(
-                                                           placeholder = 'click to select networks',
-                                                           openOnFocus = TRUE
-                                                       )
-                                                       )
-                                       ,proxy.height='40px',size=.5,type=7)
-               ),
-               div(p('or enter sites')),
-               textAreaInput(
-                   inputId = 'custom_site_input_textarea',
-                   label = NULL, 
-                   ## height = '10em', width='100%',
-                   placeholder = "paste site IDs here"
-               ),
-               actionButton('apply_custom_site_input', 'apply')
+               h4('select network'),
+               div(class = 'well well-info',
+                   div(
+                       actionButton('clear_net_selection', 'clear all'),
+                       actionButton('select_all_nets', 'select all')
+                   ),
+                   div(
+                       shinycssloaders::withSpinner(
+                                            selectizeInput(inputId = 'select_net', label = "",
+                                                           choices = NULL,
+                                                           multiple = TRUE,
+                                                           options = list(
+                                                               placeholder = 'click to select networks',
+                                                               openOnFocus = TRUE
+                                                           )
+                                                           )
+                                           ,proxy.height='40px',size=.5,type=7)
+                   ),
+                   div(p('or enter sites'),
+                       textAreaInput(
+                           inputId = 'custom_site_input_textarea',
+                           label = NULL, 
+                           ## height = '10em', width='100%',
+                           placeholder = "paste site IDs here"
+                       ),
+                       actionButton('apply_custom_site_input', 'apply')
+                       )
+                   ),
+               h4('search settings'),
+               ## initStore("store", "enrich"), # Namespace must be unique to this application!
+               div(class = 'well well-info', 
+                   actionButton(
+                                inputId = 'btn_copy_search_settings', class = 'btn btn-sm',
+                                onClick = 'c2c()', label = icon('copy')),
+                   downloadButton('btn_save_search_settings', class = 'btn btn-sm', ''),
+                   actionButton('btn_apply_search_settings', class = 'btn btn-sm btn-info float-right',
+                                'apply settings'),
+                   textAreaInput(inputId = 'search_settings',
+                                 label = NULL,
+                                 placeholder = 'copy/paste search settings',
+                                 rows = 10
+                                )
+
+                   )
                ),
         column(10,
                tabsetPanel(type='tabs',
                            tabPanel('Data table',
+                                    div(shiny::uiOutput('timestamp')),
                                     div(verbatimTextOutput('debugInfo')),
                                     div(class='btn-group p-3',
                                         dropdown(
-                                            h4('pick attributes to display'),                                             
+                                            h4('pick attributes to display'),
                                             shinyTree('tree_attributes',
                                                       checkbox = TRUE, search = TRUE,
                                                       themeDots = TRUE,
@@ -97,8 +124,7 @@ ui <- fluidPage(
                                             withSpinner(id='table_spinner', image='data/logo.svg')
                                     ),
                                     div(class='btn-group',
-                                        downloadButton("download_csv", "CSV") ##,
-                                        ## downloadButton("download_xls", "XLS")
+                                        downloadButton("download_zip", "ZIP")
                                         )
                                     ),
 
