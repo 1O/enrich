@@ -6,7 +6,12 @@ sapply(c('dplyr',
          'DT',
          'shinyWidgets',
          'shinyjs',
-         'shinycssloaders'
+         'shinycssloaders',
+         'openxlsx',
+         'jsonlite',
+         'shinyBS' #,
+         ## devtools::install_github("trestletech/shinyStore")
+         ## 'shinyStore'
          ),
        function(p) {require(p, character.only = TRUE)})
 
@@ -15,11 +20,11 @@ source('./helpers.R')
 load('./www/data/site-details-as-json.RData')
 load('./www/data/attribute_list.RData')
 
+
+jsons  <- head(jsons, 20)
+
 ## TODO ============================== 
 ## - replace multiple occurence of current_upload with reactive value
-
-ls()
-
 
 
 server <- function(input, output) {
@@ -27,9 +32,12 @@ server <- function(input, output) {
     session = getDefaultReactiveDomain()
     shinyjs::useShinyjs()
 
+    output$timestamp <- renderUI(p(class = 'float-right', tags$span(class = 'badge', 'DEIMS data as of:'),
+                                   tags$span(class = 'badge badge-info', 
+                                             as.Date(file.info('./www/data/site-details-as-json.RData')$mtime))
+                                   ))
 
     
-
     ## live retrieval like so (but takes 560s)
     ## jsons <- get_all_sites_as_big_json()
 
@@ -59,6 +67,7 @@ server <- function(input, output) {
         'attributes.environmentalCharacteristics.eunisHabitat.label'
     )
 
+
     ## output$debugInfo <- renderPrint(site_details %>% rows())
 
     site_details <- 
@@ -76,13 +85,13 @@ server <- function(input, output) {
         })
 
 
-    ## ==================== sidebar panel, network / site selection ====================
 
+
+
+    ## ==================== sidebar panel, network / site selection ====================
     network_choices <- get_network_names(site_details)
     ## network_memberships <- get_network_memberships(site_details)
-
     
-
 
     
 
@@ -101,6 +110,10 @@ server <- function(input, output) {
     })
     
 
+
+
+
+
     observeEvent(input$tree_attributes, {       
         selection <- input$tree_attributes %>% get_selected(.,format='names')
         branches <- selection %>% map(~ paste0(attr(.x,'ancestry'),collapse='.'))
@@ -117,14 +130,37 @@ server <- function(input, output) {
                          select(active_attributes()) %>%
                          left_join(foreign_data(), by=c('id'='id'))
                          )
-     })
+    })
+
+
+    search_settings <- reactiveVal()
+    observe({
+        one_hot_attributes <- input$one_hot_picker
+        search_settings(parse_settings(a = active_attributes(),
+                                       n = active_net_ids(),
+                                       f = input$one_hot_picker
+                                       )
+                        )
+        updateTextInput(inputId = 'search_settings', session = session,
+                        value = search_settings()
+                        )
+    }) %>%
+        bindEvent(input$select_net, input$tree_attributes, input$one_hot_picker)
+
+
+    ## save settings to browser storage:
+    ## observe({
+    ##     if (input$save_to_browser <= 0){
+    ##         ## On initialization, set the value of the text editor to the current val.
+    ##         updateTextInput(session, "text", value=isolate(input$store)$text)
+    ##         return()
+    ##     }
+    ##     updateStore(session, "text", isolate(input$search_settings))
+    ## })
 
 
     observeEvent(input$select_net,{
         active_net_ids({input$select_net %>% as.vector %>% as.character})
-        updateTextAreaInput(session, 'custom_site_input_textarea',
-                            value = active_site_ids() %>% paste(collapse='\n')
-                            )
         active_site_ids(
             get_active_sites_from_active_networks(site_details, active_net_ids())
         )
@@ -135,7 +171,7 @@ server <- function(input, output) {
                          left_join(foreign_data(), by=c('id'='id'))
                          )
     })
-    
+
 
     observeEvent(input$clear_net_selection,{
         updateSelectizeInput(session,'select_net',selected = NA)
@@ -164,10 +200,19 @@ server <- function(input, output) {
 
     })
 
+    observeEvent(input$btn_copy_search_settings, toastr_success("copied to clipboard", position = 'bottom-left'))
+    observeEvent(input$btn_save_search_settings, toastr_success("saved locally", position = 'bottom-left'))
+    output$btn_save_search_settings <- downloadHandler(
+        filename = function() {paste0('search-settings-',Sys.Date(),'.txt')},
+        contentType = 'application/json',
+        content = function(file) {
+            writeLines(paste(input$search_settings, collapse = ", "), file)
+        }
+    )
 
-    ## ==================== data tab ====================
 
-    
+
+
     get_tree_data <- function(){
         att_tree_loader$set(10)    ## expand progress bar to 10%
         treeData <-   data.frame(s = paste0('root.',
@@ -203,31 +248,30 @@ server <- function(input, output) {
         )
     )
 
-    
-    shinyWidgets::updatePickerInput(
-                      inputId = 'one_hot_picker', 
-                      session = session,
-                      choices = one_hot_value_combos
-                  )
 
-    
+    updatePickerInput(
+        inputId = 'one_hot_picker', 
+        session = session,
+        choices = one_hot_value_combos
+    )
 
 
     observe({
-        input$one_hot_picker %>%
-            ## one_hot_choices() %>% 
+
+        json <- jsonlite::parse_json(input$search_settings)
+        active_attributes(unlist(json$attributes))
+        all_attributes <- c(json$flag_attributes, input$one_hot_picker) %>% unique
+
+        all_attributes %>%
+            ## input$one_hot_picker %>%
             walk(~{
                 if(length(.x) > 0 ){
                     choice_string <- strsplit(.x,'\\|') %>% unlist
                     hot_attribute <- choice_string[1]; hot_value  <- choice_string[2]
                     hot_attribute_short <- hot_attribute %>% gsub('.*\\.','',.)
-                    shinyjs::logjs(hot_attribute_short)
                     if(!hot_attribute %in% active_attributes()) {
-                        active_attributes(c(active_attributes(),hot_attribute ))} 
+                        active_attributes(c(active_attributes(), hot_attribute ))} 
                     col_pos <- grep(hot_attribute, active_attributes())
-
-                    
-                    ## active_site_data() %>%
                     new_yn_col_title <- paste0(hot_attribute_short,':',hot_value)
                     new_data <- 
                         site_details %>% 
@@ -239,9 +283,11 @@ server <- function(input, output) {
                         active_site_data(.)
                 }
             })
-    })
-
-
+    }) %>%
+    bindEvent(input$one_hot_picker,
+              input$btn_apply_search_settings,
+              input$tree_attributes,  ## selects attributes (columns)
+              ignoreInit = TRUE)
 
 
     ## find available plugins with DT:::available_plugins()
@@ -267,18 +313,49 @@ server <- function(input, output) {
 
 
 
-
     output$download_csv <- downloadHandler(
         filename = function() {paste0('site-data-',Sys.Date(),'.csv')},
         content = function(file) {write.csv(active_site_data(), file, row.names = FALSE)}
     )
 
+    ## output$download_xlsx <- downloadHandler(
+    ##     filename = function() {paste0('site-data-',Sys.Date(),'.xlsx')},
+    ##     content = function(file) {write.xlsx(x = active_site_data(), file = file,
+    ##                                          sheetName = 'DEIMS site data', row.names = FALSE)}
+    ## )
 
 
+    output$download_zip <- 
+        downloadHandler(contentType = 'application/zip',
+                        filename = function() {
+                            paste0("DEIMS-sitedata-", Sys.Date(), ".zip")
+                        },
+
+                        content = function(file) {
+                            output_dir_name <- file.path(tempdir(),'output')
+                            slug <- file.path(output_dir_name, paste0("DEIMS-sitedata-", Sys.Date()))
+                            unlink(output_dir_name, recursive = TRUE, force = TRUE)
+                            dir.create(output_dir_name)
+                            date_stamp = as.character(Sys.Date())
+                            write.csv(active_site_data(), file = paste0(slug, '.csv'))
+                            write.xlsx(x = active_site_data(),
+                                       file = paste0(slug,'.xlsx'),
+                                       sheetName = 'DEIMS site data', rowNames = FALSE
+                                       )
+                            writeLines(paste(input$search_settings, collapse = ", "), 
+                                       paste0(file.path(output_dir_name,'search-settings.json')))
+                            output$debugInfo <- renderPrint(dir(output_dir_name))
+                            zip::zip(zipfile = file,
+                                     files = dir(output_dir_name, full.names = TRUE),
+                                     mode = 'cherry-pick'
+                                     )
+                        }
+                        )
+    
     ## --------------------  datastore tab  --------------------
     foreign_data <- reactive({})
 
-    
+
 
     ## return first column containing a datum which resembles a site ID
     foreign_site_id_candidates <- reactive({
@@ -294,7 +371,7 @@ server <- function(input, output) {
         }
     })
 
-    
+
     foreign_key <- reactive(input$select_foreign_id)
     observeEvent(input$select_delimiter,{
         shinyWidgets::updateAwesomeRadio(

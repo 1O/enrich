@@ -23,16 +23,16 @@ get_all_sites_as_big_json <- function(){
     big_tree_list
 }
 
-wormify <- function(l, url = '', title=''){
-  sep = '|'
-  urls <- pluck(l, url)
-  titles <- pluck(l, title)
-  intro  <- span(length(titles), class='badge')
-  ifelse(url != '',
-         return(paste0(intro,'<a href=',urls,'>', titles,'</a>',
-                       collapse = sep)),
-         paste(intro,titles, collapse = sep))
-}
+## wormify <- function(l, url = '', title=''){
+##   sep = '|'
+##   urls <- pluck(l, url)
+##   titles <- pluck(l, title)
+##   intro  <- span(length(titles), class='badge')
+##   ifelse(url != '',
+##          return(paste0(intro,'<a href=',urls,'>', titles,'</a>',
+##                        collapse = sep)),
+##          paste(intro,titles, collapse = sep))
+## }
 
 vector_as_named <- function(v){
     set_names(v, v)
@@ -151,4 +151,13 @@ prettify_colnames <- function(col_titles){
         gsub('\\.','\n',.)
 }
 
+
+parse_settings  <- function(a = list(), n = list(), f = list()){
+    jsonlite::toJSON(list(
+                  attributes = a,
+                  network_ids = n,
+                  flag_attributes = f
+              )
+              ) %>% as.character
+}
 
